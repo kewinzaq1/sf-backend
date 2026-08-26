@@ -1,13 +1,22 @@
+import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class AddressType(str, enum.Enum):
+    """Kind of postal address. Shared by the ORM column and the API schemas."""
+
+    home = "home"
+    work = "work"
+    other = "other"
 
 
 class Contact(Base):
@@ -22,12 +31,6 @@ class Contact(Base):
 
     company: Mapped[str | None] = mapped_column(String(200))
     job_title: Mapped[str | None] = mapped_column(String(200))
-
-    address: Mapped[str | None] = mapped_column(String(300))
-    city: Mapped[str | None] = mapped_column(String(120))
-    state: Mapped[str | None] = mapped_column(String(120))
-    postal_code: Mapped[str | None] = mapped_column(String(20))
-    country: Mapped[str | None] = mapped_column(String(120))
 
     notes: Mapped[str | None] = mapped_column(Text)
 
@@ -46,9 +49,43 @@ class Contact(Base):
         nullable=False,
     )
 
+    addresses: Mapped[list["Address"]] = relationship(
+        back_populates="contact",
+        cascade="all, delete-orphan",
+        order_by="Address.id",
+    )
+
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Contact id={self.id} email={self.email!r}>"
+
+
+class Address(Base):
+    """One postal address belonging to a contact. A contact may have many."""
+
+    __tablename__ = "addresses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    type: Mapped[AddressType] = mapped_column(
+        Enum(AddressType, native_enum=False, length=10, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=AddressType.home,
+    )
+
+    street: Mapped[str | None] = mapped_column(String(300))
+    city: Mapped[str | None] = mapped_column(String(120))
+    state: Mapped[str | None] = mapped_column(String(120))
+    postal_code: Mapped[str | None] = mapped_column(String(20))
+    country: Mapped[str | None] = mapped_column(String(120))
+
+    contact: Mapped[Contact] = relationship(back_populates="addresses")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<Address id={self.id} contact_id={self.contact_id} type={self.type.value!r}>"
