@@ -108,14 +108,23 @@ also read):
 
 ```
 first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes, photo
+notes, photo, addresses
 ```
 
 `photo` is a profile image sent inline as a base64 `data:` URL — PNG, JPEG,
 WebP, or GIF, at most 1 MiB decoded. `null` (or omitting it on `PUT`) clears
 the photo, and clients fall back to the contact's initials.
 
-Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
+`addresses` is a list of up to 20 typed postal addresses. Each entry is
+`{type, street, city, state, postal_code, country}` where `type` is `home`,
+`work`, or `other` (default `home`) and everything else is optional. Writes
+always replace the whole list; on `PATCH`, omit the field to keep the stored
+addresses, or send `null`/`[]` to clear them. The old flat address fields
+(`address`, `city`, …) are gone — unknown keys are rejected with `422`
+rather than silently dropped.
+
+Responses add `id`, `full_name`, `created_at`, `updated_at` (UTC), and an
+`id` on every address.
 
 ### List query parameters
 
