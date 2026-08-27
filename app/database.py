@@ -51,6 +51,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     ensure_photo_column(engine)
+    ensure_addresses_migrated(engine)
 
 
 def ensure_photo_column(target_engine: Engine) -> None:
@@ -70,6 +71,40 @@ def ensure_photo_column(target_engine: Engine) -> None:
         return
     with target_engine.begin() as connection:
         connection.execute(text("ALTER TABLE contacts ADD COLUMN photo TEXT"))
+
+
+def ensure_addresses_migrated(target_engine: Engine) -> None:
+    """Copy legacy flat address columns into the `addresses` table.
+
+    Contacts created before the one-to-many model stored one address as five
+    columns on the contact row. Those columns are no longer mapped, so their
+    data would silently disappear after upgrade. Each legacy row with any
+    address data becomes one `home` address, skipping contacts that already
+    have address rows — which makes the copy idempotent. The old columns are
+    left in place: dropping columns is not portable across dialects, and the
+    ORM simply never reads them again.
+    """
+    inspector = inspect(target_engine)
+    tables = inspector.get_table_names()
+    if "contacts" not in tables or "addresses" not in tables:
+        return
+    contact_columns = {column["name"] for column in inspector.get_columns("contacts")}
+    legacy_columns = {"address", "city", "state", "postal_code", "country"}
+    if not legacy_columns <= contact_columns:
+        return
+    with target_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO addresses (contact_id, type, street, city, state, postal_code, country)
+                SELECT id, 'home', address, city, state, postal_code, country
+                FROM contacts
+                WHERE (address IS NOT NULL OR city IS NOT NULL OR state IS NOT NULL
+                       OR postal_code IS NOT NULL OR country IS NOT NULL)
+                  AND id NOT IN (SELECT contact_id FROM addresses)
+                """
+            )
+        )
 
 
 def get_db() -> Generator[Session, None, None]:

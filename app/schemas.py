@@ -44,6 +44,8 @@ MAX_ADDRESSES = 20  # sanity cap so one contact cannot hold an unbounded list
 class AddressInput(BaseModel):
     """One postal address, as sent when creating or replacing a contact."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: AddressType = Field(
         default=AddressType.home,
         description="What kind of address this is: `home`, `work`, or `other`.",
@@ -171,7 +173,7 @@ _MINIMAL_EXAMPLE = {"first_name": "Grace", "last_name": "Hopper", "email": "grac
 class ContactCreate(ContactBase):
     """Body of `POST /api/v1/contacts`. Only the two names and email are required."""
 
-    model_config = ConfigDict(json_schema_extra={"examples": [_FULL_EXAMPLE, _MINIMAL_EXAMPLE]})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [_FULL_EXAMPLE, _MINIMAL_EXAMPLE]})
 
 
 class ContactReplace(ContactBase):
@@ -182,7 +184,7 @@ class ContactReplace(ContactBase):
     Use `PATCH` if you only want to change some fields.
     """
 
-    model_config = ConfigDict(json_schema_extra={"examples": [_FULL_EXAMPLE]})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [_FULL_EXAMPLE]})
 
 
 class ContactUpdate(BaseModel):
@@ -195,7 +197,8 @@ class ContactUpdate(BaseModel):
     """
 
     model_config = ConfigDict(
-        json_schema_extra={"examples": [{"phone": "+1-415-555-0199", "job_title": "Chief Engineer"}]}
+        extra="forbid",
+        json_schema_extra={"examples": [{"phone": "+1-415-555-0199", "job_title": "Chief Engineer"}]},
     )
 
     first_name: str | None = Field(default=None, min_length=1, max_length=100, description="New given name.")
@@ -212,8 +215,9 @@ class ContactUpdate(BaseModel):
         default=None,
         max_length=MAX_ADDRESSES,
         description=(
-            "New address list. When present it replaces every stored address; "
-            "omit the field to keep the current ones."
+            "New address list. When present it replaces every stored address — "
+            "`null` and `[]` both clear the list. Omit the field to keep the "
+            "current ones."
         ),
     )
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")

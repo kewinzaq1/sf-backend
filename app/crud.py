@@ -1,7 +1,7 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Address, Contact
+from app.models import Address, Contact, utcnow
 from app.schemas import AddressInput, ContactCreate, ContactReplace, ContactUpdate
 
 SORTABLE_FIELDS = ("id", "first_name", "last_name", "email", "company", "created_at", "updated_at")
@@ -76,11 +76,19 @@ def create_contact(db: Session, payload: ContactCreate) -> Contact:
     return contact
 
 
+def _replace_addresses(contact: Contact, addresses: list[AddressInput]) -> None:
+    # Assigning the collection replaces it; delete-orphan removes the old rows.
+    # Changing child rows never emits an UPDATE on the parent, so the column
+    # `onupdate` would not fire — touch `updated_at` explicitly to keep the
+    # documented last-modification timestamp honest.
+    contact.addresses = _build_addresses(addresses)
+    contact.updated_at = utcnow()
+
+
 def replace_contact(db: Session, contact: Contact, payload: ContactReplace) -> Contact:
     for field, value in payload.model_dump(exclude={"addresses"}).items():
         setattr(contact, field, _normalize_email(value) if field == "email" else value)
-    # Assigning the collection replaces it; delete-orphan removes the old rows.
-    contact.addresses = _build_addresses(payload.addresses)
+    _replace_addresses(contact, payload.addresses)
     db.commit()
     db.refresh(contact)
     return contact
@@ -89,8 +97,10 @@ def replace_contact(db: Session, contact: Contact, payload: ContactReplace) -> C
 def update_contact(db: Session, contact: Contact, payload: ContactUpdate) -> Contact:
     for field, value in payload.model_dump(exclude_unset=True, exclude={"addresses"}).items():
         setattr(contact, field, _normalize_email(value) if field == "email" else value)
-    if "addresses" in payload.model_fields_set and payload.addresses is not None:
-        contact.addresses = _build_addresses(payload.addresses)
+    if "addresses" in payload.model_fields_set:
+        # An explicit `null` clears the list, exactly like `[]` — a present
+        # field always replaces the stored set.
+        _replace_addresses(contact, payload.addresses or [])
     db.commit()
     db.refresh(contact)
     return contact
