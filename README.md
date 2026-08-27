@@ -108,8 +108,12 @@ also read):
 
 ```
 first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes
+address, city, state, postal_code, country, notes, photo
 ```
+
+`photo` is a profile image sent inline as a base64 `data:` URL — PNG, JPEG,
+WebP, or GIF, at most 1 MiB decoded. `null` (or omitting it on `PUT`) clears
+the photo, and clients fall back to the contact's initials.
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
 

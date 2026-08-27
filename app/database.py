@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -50,6 +50,26 @@ def init_db() -> None:
     from app import models  # noqa: F401  (register models on Base.metadata)
 
     Base.metadata.create_all(bind=engine)
+    ensure_photo_column(engine)
+
+
+def ensure_photo_column(target_engine: Engine) -> None:
+    """Add `contacts.photo` to a database created before the photo feature.
+
+    `create_all()` only creates missing tables — it never alters existing
+    ones — and persistent database URLs (file SQLite, Postgres) are a
+    supported configuration. A single nullable column needs no migration
+    framework: `ALTER TABLE ... ADD COLUMN` works on both dialects, and the
+    inspection makes the call idempotent.
+    """
+    inspector = inspect(target_engine)
+    if "contacts" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("contacts")}
+    if "photo" in columns:
+        return
+    with target_engine.begin() as connection:
+        connection.execute(text("ALTER TABLE contacts ADD COLUMN photo TEXT"))
 
 
 def get_db() -> Generator[Session, None, None]:

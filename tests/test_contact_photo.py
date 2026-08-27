@@ -1,5 +1,8 @@
 import base64
 
+from sqlalchemy import create_engine, inspect, text
+
+from app.database import ensure_photo_column
 from app.schemas import MAX_PHOTO_BYTES
 
 BASE = "/api/v1/contacts"
@@ -55,6 +58,27 @@ def test_patch_sets_and_clears_photo(client, payload):
     cleared = client.patch(f"{BASE}/{contact_id}", json={"photo": None})
     assert cleared.status_code == 200
     assert cleared.json()["photo"] is None
+
+
+def test_legacy_database_gains_photo_column(tmp_path):
+    # A database created before this feature has no `photo` column, and
+    # create_all() will not add one. ensure_photo_column() must upgrade it
+    # in place, keep existing rows, and be safe to run twice.
+    legacy = create_engine(f"sqlite+pysqlite:///{tmp_path}/legacy.db")
+    with legacy.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE contacts (id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, email TEXT)")
+        )
+        connection.execute(
+            text("INSERT INTO contacts (first_name, last_name, email) VALUES ('Ada', 'Lovelace', 'ada@example.com')")
+        )
+
+    ensure_photo_column(legacy)
+    ensure_photo_column(legacy)  # idempotent
+
+    assert "photo" in {column["name"] for column in inspect(legacy).get_columns("contacts")}
+    with legacy.connect() as connection:
+        assert connection.execute(text("SELECT photo FROM contacts")).scalar_one() is None
 
 
 def test_put_without_photo_clears_it(client, payload):
